@@ -35,7 +35,7 @@ class MiGPT:
         self.config = config
 
         self.mi_token_home = Path.home() / ".mi.token"
-        self.last_timestamp = int(time.time() * 1000)  # timestamp last call mi speaker
+        self.last_timestamp = int(time.time() * 1000)-1000000  # timestamp last call mi speaker, 时间不准
         self.cookie_jar = None
         self.device_id = ""
         self.parent_id = None
@@ -181,14 +181,29 @@ class MiGPT:
 
         return data
 
+    # def need_ask_gpt(self, record):
+    #     if not record:
+    #         return False
+    #     query = record.get("query", "")
+    #     return (
+    #         self.in_conversation
+    #         and not query.startswith(WAKEUP_KEYWORD)
+    #         or query.lower().startswith(tuple(w.lower() for w in self.config.keyword))
+    #     )
+
     def need_ask_gpt(self, record):
         if not record:
             return False
         query = record.get("query", "")
+        answers = record.get("answers",[])
+        if answers !=[]:
+            xiaoai_answer = answers[0]["tts"]["text"]
+        else:
+            xiaoai_answer = ""
         return (
             self.in_conversation
             and not query.startswith(WAKEUP_KEYWORD)
-            or query.lower().startswith(tuple(w.lower() for w in self.config.keyword))
+            or "再学习一下" in xiaoai_answer or "还在学习中" in xiaoai_answer or "更努力学习了" in xiaoai_answer or "我不太擅长" in xiaoai_answer
         )
 
     def need_change_prompt(self, record):
@@ -364,6 +379,9 @@ class MiGPT:
         while True:
             self.polling_event.set()
             new_record = await self.last_record.get()
+
+            print("get ===== new rocord: ", new_record)
+            
             self.polling_event.clear()  # stop polling when processing the question
             query = new_record.get("query", "").strip()
             if query == self.config.start_conversation:

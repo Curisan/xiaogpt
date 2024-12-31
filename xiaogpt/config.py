@@ -39,7 +39,8 @@ DEFAULT_COMMAND = ("5-1", "5-5")
 
 KEY_WORD = ("帮我", "请")
 CHANGE_PROMPT_KEY_WORD = ("更改提示词",)
-PROMPT = "以下请用300字以内回答，请只回答文字不要带链接"
+# PROMPT = "以下请用300字以内回答，请只回答文字不要带链接"
+PROMPT = "你是比小爱同学聪明的助手，以下请用300字以内回答，请只回答文字不要带链接。我也会给你小爱同学的回答，请先调侃下小爱同学，再进行回答"
 # simulate_xiaoai_question
 MI_ASK_SIMULATE_DATA = {
     "code": 0,

@@ -18,6 +18,7 @@ class QwenBot(ChatHistoryMixin, BaseBot):
 
         self.history = []
         dashscope.api_key = qwen_key
+        self.num_turn = 10
 
     @classmethod
     def from_config(cls, config):
@@ -29,6 +30,8 @@ class QwenBot(ChatHistoryMixin, BaseBot):
 
         # from https://help.aliyun.com/zh/dashscope/developer-reference/api-details
         self.history.append({"role": Role.USER, "content": query})
+
+        print("history: ", self.history)
 
         response = Generation.call(
             Generation.Models.qwen_turbo,
@@ -46,7 +49,7 @@ class QwenBot(ChatHistoryMixin, BaseBot):
             )
             # keep last five
             first_history = self.history.pop(0)
-            self.history = [first_history] + self.history[-5:]
+            self.history = [first_history] + self.history[-self.num_turn:]
             print(content)
             return content
         else:
@@ -98,4 +101,16 @@ class QwenBot(ChatHistoryMixin, BaseBot):
                 )
         self.history.append({"role": role, "content": full_content})
         first_history = self.history.pop(0)
-        self.history = [first_history] + self.history[-5:]
+        self.history = [first_history] + self.history[-self.num_turn:]
+
+    async def add_history(self, query: str, message: str):
+        from dashscope.api_entities.dashscope_response import Role
+
+        self.history.append({"role": Role.USER, "content": query})
+        self.history.append({"role": Role.ASSISTANT, "content": message})
+
+        first_history = self.history.pop(0)
+        self.history = [first_history] + self.history[-self.num_turn:]
+
+        print("history: ", self.history)
+        

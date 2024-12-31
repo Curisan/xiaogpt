@@ -35,7 +35,7 @@ class MiGPT:
         self.config = config
 
         self.mi_token_home = Path.home() / ".mi.token"
-        self.last_timestamp = int(time.time() * 1000)-1000000  # timestamp last call mi speaker, 时间不准
+        self.last_timestamp = None  # timestamp last call mi speaker, 时间不准
         self.cookie_jar = None
         self.device_id = ""
         self.parent_id = None
@@ -203,7 +203,7 @@ class MiGPT:
         return (
             self.in_conversation
             and not query.startswith(WAKEUP_KEYWORD)
-            or "再学习一下" in xiaoai_answer or "还在学习中" in xiaoai_answer or "更努力学习了" in xiaoai_answer or "我不太擅长" in xiaoai_answer
+            or "再学习" in xiaoai_answer or "还在学习中" in xiaoai_answer or "更努力学习了" in xiaoai_answer or "我不太擅长" in xiaoai_answer or "继续努力" in xiaoai_answer
         )
 
     def need_change_prompt(self, record):
@@ -258,6 +258,11 @@ class MiGPT:
                 return None
             last_record = records[0]
             timestamp = last_record.get("time")
+
+            # 第一次赋值
+            if self.last_timestamp is None:
+                self.last_timestamp = timestamp
+
             if timestamp > self.last_timestamp:
                 try:
                     self.last_record.put_nowait(last_record)
@@ -302,6 +307,16 @@ class MiGPT:
         message = message.replace('"', "，")
         message = message.replace("*", "")
         return message
+    
+    def split_message(self, message):
+        if len(message)<10:
+            return [message]
+        else:
+            # 使用，。？！分割
+            message_list = re.split(r'[，。？！]', message)
+            # message_list_final = [message_list[0], ",".join(message_list[1:])]
+            message_list_final = message_list
+            return message_list_final
 
     async def ask_gpt(self, query: str) -> AsyncIterator[str]:
         if not self.config.stream:
@@ -310,7 +325,12 @@ class MiGPT:
             else:
                 answer = await self.chatbot.ask(query, **self.config.gpt_options)
             message = self._normalize(answer) if answer else ""
-            yield message
+            # 分割message，减少延迟，同时减少卡顿
+            message_list = self.split_message(message)
+            for message in message_list:
+                if message:
+                    yield message
+            # yield message
             return
 
         async def collect_stream(queue):
@@ -384,6 +404,7 @@ class MiGPT:
             
             self.polling_event.clear()  # stop polling when processing the question
             query = new_record.get("query", "").strip()
+            xiaoai_answer = await self.get_xiaoai_answer(new_record)
             if query == self.config.start_conversation:
                 if not self.in_conversation:
                     print("开始对话")
@@ -404,6 +425,10 @@ class MiGPT:
                 self._change_prompt(new_record.get("query", ""))
 
             if not self.need_ask_gpt(new_record):
+                # 如果不需要GPT，则添加历史
+                if not self.chatbot.has_history():
+                    query = f"{query}，{self.config.prompt}"
+                await self.chatbot.add_history(query, xiaoai_answer)
                 self.log.debug("No new xiao ai record")
                 continue
 
@@ -423,7 +448,9 @@ class MiGPT:
                 await self.stop_if_xiaoai_is_playing()
             else:
                 # waiting for xiaoai speaker done
-                await asyncio.sleep(8)
+                # 小爱不会回答很快就说完了，因此改成3秒
+                print("停顿1秒...")
+                await asyncio.sleep(1)
             await self.do_tts(f"正在问{self.chatbot.name}请耐心等待")
             try:
                 print(
@@ -434,6 +461,9 @@ class MiGPT:
                 print("小爱没回")
             print(f"以下是 {self.chatbot.name} 的回答: ", end="")
             try:
+                # await self.speak(self.yield_message("稍等，我来请教下别人！"))
+                # 加上小爱同学的回答
+                query = f"{query}，以下是小爱同学的回答：{xiaoai_answer}"
                 await self.speak(self.ask_gpt(query))
             except Exception as e:
                 print(f"{self.chatbot.name} 回答出错 {str(e)}")
@@ -450,9 +480,24 @@ class MiGPT:
         # however, the nation code is never used.
         lang = detect_language(first_chunk) + "-"
 
+        print("first_chunk: ", first_chunk)
+
         async def gen():  # reconstruct the generator
             yield first_chunk
             async for text in text_stream:
+                print("speak text: ", text)
                 yield text
 
         await self.tts.synthesize(lang, gen())
+
+    async def get_xiaoai_answer(self, record):
+        # 获取小爱同学的回答
+        xiaoai_answer = record.get("answers", [])
+        if xiaoai_answer!=[]:
+            return xiaoai_answer[0].get("tts", {}).get("text")
+        else:
+            return ""
+
+    async def yield_message(self, message: str) -> AsyncIterator[str]:
+        yield message
+        return
